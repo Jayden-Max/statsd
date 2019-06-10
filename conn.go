@@ -19,12 +19,12 @@ var (
 
 // client to send events to StatsD
 type Client struct {
-	addr        string   // 数据库IP地址
-	prefix      string   // 前缀
-	conn        net.Conn // net 连接
-	buffer      []bufferCount
-	mux         sync.Mutex
-	flushTicker *time.Ticker // 定时器
+	addr        string        // 数据库IP地址
+	prefix      string        // 前缀
+	conn        net.Conn      // net 连接
+	buffer      []bufferCount // buffer
+	mux         sync.Mutex    // mux
+	flushTicker *time.Ticker  // 定时器
 }
 
 type bufferCount struct {
@@ -39,17 +39,17 @@ func NewClient(addr string, prefix string) (*Client, error) {
 		addr:   addr,
 		prefix: prefix,
 	}
-	
+
 	// use udp, expire 10s
 	conn, err := net.DialTimeout("udp", addr, 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	cli.conn = conn
 	cli.flushTicker = time.NewTicker(10 * time.Second)
 	go cli.bufferSendLoop()
-	
+
 	return cli, nil
 }
 
@@ -64,7 +64,7 @@ func (cli *Client) bufferSendLoop() {
 		buffer := cli.buffer
 		cli.buffer = nil
 		cli.mux.Unlock()
-		
+
 		for idx := range buffer {
 			cli.send(buffer[idx].name, buffer[idx].count, "c", buffer[idx].sampleRate)
 		}
@@ -91,7 +91,7 @@ func (cli *Client) Close() error {
 	if cli.conn == nil {
 		return nil
 	}
-	
+
 	return cli.conn.Close()
 }
 
@@ -100,62 +100,51 @@ func (cli *Client) Close() error {
 
 // Incr a counter metric
 // often used to note a special event.
-func (cli *Client) Incr(stat string, count int64) error {
-	return cli.IncrWithSampling(stat, count, 1)
-}
-
 func (cli *Client) IncrWithSampling(stat string, count int64, sampleRate float32) error {
 	if err := checkSampleRate(sampleRate); err != nil {
 		return err
 	}
-	
+
 	if !shouldFire(sampleRate) {
 		return nil // ignore this call
 	}
-	
+
 	if err := checkCount(count); err != nil {
 		return err
 	}
-	
+
 	cli.addToBuffer(stat, count, sampleRate)
 	return nil
 }
 
-func (cli *Client) Decr(stat string, count int64) error {
-	return cli.DecrWithSampling(stat, count, 1)
-}
-
+// Decr a counter metric
 func (cli *Client) DecrWithSampling(stat string, count int64, sampleRate float32) error {
 	if err := checkSampleRate(sampleRate); err != nil {
 		return err
 	}
-	
+
 	if !shouldFire(sampleRate) {
 		return nil
 	}
-	
+
 	if err := checkCount(count); err != nil {
 		return err
 	}
-	
+
 	return cli.send(stat, -count, "c", sampleRate)
 }
 
 // Timing - Track a duration event
 // The time delta must be given in milliseconds
-func (cli *Client) Timing(stat string, delta int64) error {
-	return cli.TimingWithSampling(stat, delta, 1)
-}
-
 func (cli *Client) TimingWithSampling(stat string, delta int64, sampleRate float32) error {
 	if err := checkSampleRate(sampleRate); err != nil {
 		return err
 	}
-	
+
 	if !shouldFire(sampleRate) {
 		return nil
 	}
-	
+
 	return cli.send(stat, delta, "ms", sampleRate)
 }
 
@@ -165,44 +154,36 @@ func (cli *Client) TimingWithSampling(stat string, delta int64, sampleRate float
 // delta to be true, that specifies that the gauge should be updated, not set.
 // Due to the underlying protocol, you can't explicitly set a gauge to a negative number
 // without first setting it to zero.
-func (cli *Client) Gauge(stat string, value int64) error {
-	return cli.GaugeWithSampling(stat, value, 1)
-}
-
 func (cli *Client) GaugeWithSampling(stat string, value int64, sampleRate float32) error {
 	if err := checkSampleRate(sampleRate); err != nil {
 		return err
 	}
-	
+
 	if !shouldFire(sampleRate) {
 		return nil
 	}
-	
+
 	if value < 0 {
 		cli.send(stat, 0, "g", 1)
 	}
-	
+
 	return cli.send(stat, value, "g", sampleRate)
 }
 
 // send a float point value for gauge
-func (cli *Client) FGauge(stat string, value float64) error {
-	return cli.FGaugeWithSampling(stat, value, 1)
-}
-
 func (cli *Client) FGaugeWithSampling(stat string, value float64, sampleRate float32) error {
 	if err := checkSampleRate(sampleRate); err != nil {
 		return err
 	}
-	
+
 	if !shouldFire(sampleRate) {
 		return nil
 	}
-	
+
 	if value < 0 {
 		cli.send(stat, value, "g", 1)
 	}
-	
+
 	return cli.send(stat, value, "g", sampleRate)
 }
 
@@ -217,13 +198,13 @@ func (cli *Client) send(bucket string, value interface{}, t string, sampleRate f
 	if cli.conn == nil {
 		return Err_NotConnected
 	}
-	
+
 	if cli.prefix != "" {
 		bucket = fmt.Sprintf("%s.%s", cli.prefix, bucket)
 	}
-	
+
 	metric := fmt.Sprintf("%s:%v|%s|@%f", bucket, value, t, sampleRate)
-	
+
 	_, err := cli.conn.Write([]byte(metric))
 	return err
 }
@@ -232,7 +213,7 @@ func checkCount(c int64) error {
 	if c <= 0 {
 		return Err_InvalidCount
 	}
-	
+
 	return nil
 }
 
@@ -240,7 +221,7 @@ func checkSampleRate(rate float32) error {
 	if rate < 0 || rate > 1 {
 		return Err_InvalidSampleRate
 	}
-	
+
 	return nil
 }
 
@@ -248,8 +229,8 @@ func shouldFire(sampleRate float32) bool {
 	if sampleRate == 1 {
 		return true
 	}
-	
+
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
-	
+
 	return r.Float32() <= sampleRate
 }

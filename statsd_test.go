@@ -43,8 +43,6 @@ func Test_Incr(t *testing.T) {
 	for {
 		<-ticker.C
 
-		Incr("statsd.incr")
-
 		if cnt == 20 {
 			break
 		}

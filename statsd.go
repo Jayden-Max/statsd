@@ -17,7 +17,7 @@ const (
 	metricType_Gauge
 	metricType_FGauge
 	metricType_Timer
-	
+
 	default_SampleRate = 1.0
 )
 
@@ -33,13 +33,13 @@ type Config struct {
 // set config
 func Setup(cfg *Config) {
 	config = cfg
-	
+
 	// if sample rate equal 0, it indicates the statsd never called
 	// so we need to set a default rate
 	if config.SampleRate == 0 {
 		config.SampleRate = default_SampleRate
 	}
-	
+
 	addr = fmt.Sprintf("%s:%d", config.Host, config.Port)
 }
 
@@ -50,7 +50,7 @@ func getClient() *Client {
 	if config == nil {
 		return nil
 	}
-	
+
 	once.Do(func() {
 		client, err := NewClient(addr, config.Project) // project 在初始化时，表明哪个服务
 		if err != nil {
@@ -58,7 +58,7 @@ func getClient() *Client {
 		}
 		defaultClient = client
 	})
-	
+
 	return defaultClient
 }
 
@@ -89,7 +89,7 @@ func sendAsync(stat string, value interface{}, t metricType, sampleRate float32)
 			}
 		}()
 	})
-	
+
 	select {
 	case sendChan <- &metricItem{stat, value, t, sampleRate}:
 	default:
@@ -101,7 +101,7 @@ func sendEx(cli *Client, stat string, value interface{}, t metricType, sampleRat
 	if stat == "" {
 		return
 	}
-	
+
 	switch t {
 	case metricType_Count:
 		if val, ok := value.(int64); ok {
@@ -125,20 +125,16 @@ func sendEx(cli *Client, stat string, value interface{}, t metricType, sampleRat
 }
 
 // Incr increment
-func Incr(stat string) {
-	getClient().Incr(stat, 1)
-}
-
-func IncrByValue(stat string, value int64) {
-	getClient().IncrWithSampling(stat, value, config.SampleRate)
+func Incr(stat string, value int64) {
+	IncrWithSampling(stat, value, config.SampleRate)
 }
 
 func IncrWithSampling(stat string, value int64, sampleRate float32) {
 	if !config.Enable {
 		return
 	}
-	
-	getClient().IncrWithSampling(stat, value, sampleRate)
+
+	send(stat, value, metricType_Count, sampleRate)
 }
 
 // Gauge set a constant value
@@ -159,7 +155,7 @@ func FGaugeWithSampling(stat string, value float64, sampleRate float32) {
 	if !config.Enable {
 		return
 	}
-	
+
 	gauge(stat, value, metricType_FGauge, sampleRate)
 }
 
@@ -176,18 +172,9 @@ func TimingWithSampling(stat string, d time.Duration, sampleRate float32) {
 	if !config.Enable {
 		return
 	}
-	
+
 	// the d must be given in milliseconds
 	t := d / time.Millisecond
-	
+
 	send(stat, int64(t), metricType_Timer, sampleRate)
-}
-
-// d := end - start
-func TimingByDuration(stat string, start time.Time, end time.Time) {
-	TimingByDurationWithSampling(stat, start, end, config.SampleRate)
-}
-
-func TimingByDurationWithSampling(stat string, start, end time.Time, sampleRate float32) {
-	TimingWithSampling(stat, end.Sub(start), sampleRate)
 }
