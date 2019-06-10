@@ -6,10 +6,10 @@
 3. grafana：前端展示
 
 #####消息格式
-`[company.]proj.module.func.<count | value | timing>`
+`[company.]project.module.func.<count | value | timing>`
 
-* companye：公司名，如ezbuy。作为公司内部使用，可省略以简化消息格式
-* proj：项目名，如dgadmin，bulma，trending等
+* company：公司名，如ezbuy。作为公司内部使用，可省略以简化消息格式
+* project：项目名，如dgadmin，bulma，trending等
 * module：模块名，项目中的具体模块
 * func：模块完成的功能，或者需监控的切入点，推荐以具体功能作为名称
 
